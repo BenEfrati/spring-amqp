@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 the original author or authors.
+ * Copyright 2022-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ import org.springframework.amqp.rabbit.listener.DirectReplyToMessageListenerCont
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.rabbit.listener.api.ChannelAwareMessageListener;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.SmartMessageConverter;
 import org.springframework.amqp.utils.JavaUtils;
 import org.springframework.beans.factory.BeanNameAware;
@@ -603,12 +604,16 @@ public class AsyncRabbitTemplate implements AsyncAmqpTemplate, ChannelAwareMessa
 					if (future instanceof RabbitConverterFuture) {
 						MessageConverter messageConverter = this.template.getMessageConverter();
 						RabbitConverterFuture<Object> rabbitFuture = (RabbitConverterFuture<Object>) future;
-						Object converted = rabbitFuture.getReturnType() != null
+						try { 
+							Object converted = rabbitFuture.getReturnType() != null
 								&& messageConverter instanceof SmartMessageConverter smart
 								? smart.fromMessage(message,
 								rabbitFuture.getReturnType())
 								: messageConverter.fromMessage(message);
-						rabbitFuture.complete(converted);
+							rabbitFuture.complete(converted);
+						} catch (MessageConversionException e) {
+							rabbitFuture.completeExceptionally(e);
+						}
 					}
 					else {
 						((RabbitMessageFuture) future).complete(message);

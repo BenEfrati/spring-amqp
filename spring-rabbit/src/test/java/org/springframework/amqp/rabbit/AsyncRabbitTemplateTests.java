@@ -54,6 +54,7 @@ import org.springframework.amqp.rabbit.listener.AbstractMessageListenerContainer
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.rabbit.listener.adapter.MessageListenerAdapter;
 import org.springframework.amqp.rabbit.listener.adapter.ReplyingMessageListener;
+import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.SimpleMessageConverter;
 import org.springframework.amqp.support.postprocessor.GUnzipPostProcessor;
 import org.springframework.amqp.support.postprocessor.GZipPostProcessor;
@@ -301,7 +302,7 @@ public class AsyncRabbitTemplateTests {
 		assertThat(confirm.get(10, TimeUnit.SECONDS)).isTrue();
 		checkMessageResult(future, "SLEEP");
 	}
-
+	
 	@SuppressWarnings("unchecked")
 	@Test
 	@DirtiesContext
@@ -385,6 +386,34 @@ public class AsyncRabbitTemplateTests {
 		future.complete("foo");
 		assertThat(callback.result).isNull();
 	}
+
+	@Test
+	public void testConversionException() throws InterruptedException {
+		CachingConnectionFactory connectionFactory = new CachingConnectionFactory("localhost");
+		connectionFactory.setChannelCacheSize(1);		
+		RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+		rabbitTemplate.setMessageConverter(new SimpleMessageConverter(){
+			@Override
+			public Object fromMessage(Message message) throws MessageConversionException {
+				throw new MessageConversionException("Failed to convert message");
+			}
+		});
+		AsyncRabbitTemplate asyncRabbitTemplate = new AsyncRabbitTemplate(rabbitTemplate);		
+		asyncRabbitTemplate.start();
+
+		RabbitConverterFuture<String> replyFuture = asyncRabbitTemplate.convertSendAndReceive("conversionException");
+		
+		CountDownLatch cdl = new CountDownLatch(1);
+        replyFuture.whenComplete((result, ex) -> {
+            cdl.countDown();
+        });
+        assertThat(cdl.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(replyFuture).isCompletedExceptionally();
+
+		asyncRabbitTemplate.stop();
+		connectionFactory.destroy();
+	}
+
 
 	@Test
 	void ctorCoverage() {
@@ -603,7 +632,7 @@ public class AsyncRabbitTemplateTests {
 								}
 								else if ("noReply".equals(message)) {
 									return null;
-								}
+								}								
 								return message.toUpperCase();
 							});
 
